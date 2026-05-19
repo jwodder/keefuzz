@@ -52,7 +52,7 @@ impl Arguments {
                     concat!(
                         "Usage: keefuzz [<options>] <database>\n",
                         "\n",
-                        "TODO: Short description\n",
+                        "Look up passwords in a KeePass database with fzf\n",
                         "\n",
                         "Visit <https://github.com/jwodder/keefuzz> for more information.\n",
                         "\n",
