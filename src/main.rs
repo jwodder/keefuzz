@@ -13,7 +13,7 @@ use zeroize::Zeroizing;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Arguments {
-    Run { dbfile: PathBuf },
+    Run(KeeFuzz),
     ShowPreview(String),
     Help,
     Version,
@@ -22,8 +22,10 @@ enum Arguments {
 impl Arguments {
     fn from_parser(mut parser: Parser) -> Result<Arguments, lexopt::Error> {
         let mut dbarg = None;
+        let mut print = false;
         while let Some(arg) = parser.next()? {
             match arg {
+                Arg::Short('p') | Arg::Long("--print") => print = true,
                 Arg::Long("show-preview") => {
                     return Ok(Arguments::ShowPreview(parser.value()?.string()?));
                 }
@@ -36,7 +38,7 @@ impl Arguments {
             }
         }
         if let Some(dbfile) = dbarg {
-            Ok(Arguments::Run { dbfile })
+            Ok(Arguments::Run(KeeFuzz { dbfile, print }))
         } else {
             Err("no database specified".into())
         }
@@ -44,7 +46,7 @@ impl Arguments {
 
     fn run(self) -> Result<ExitCode, Error> {
         match self {
-            Arguments::Run { dbfile } => run(dbfile)?,
+            Arguments::Run(kf) => kf.run()?,
             Arguments::ShowPreview(item) => show_preview(item).map_err(Error::Write)?,
             Arguments::Help => {
                 write!(
@@ -57,6 +59,8 @@ impl Arguments {
                         "Visit <https://github.com/jwodder/keefuzz> for more information.\n",
                         "\n",
                         "Options:\n",
+                        "  -p, --print       Print out password instead of copying it to the clipboard\n",
+                        "\n",
                         "  -h, --help        Display this help message and exit\n",
                         "  -V, --version     Show the program version and exit\n",
                     )
@@ -142,76 +146,93 @@ fn sanitize(s: &str) -> impl Iterator<Item = char> + '_ {
         .map(|ch| if ch == '\t' { ' ' } else { ch })
 }
 
-fn run(dbfile: PathBuf) -> Result<(), Error> {
-    let mut clipboard = arboard::Clipboard::new().map_err(Error::NewClipboard)?;
-    let db = {
-        let cfg = rpassword::ConfigBuilder::new()
-            .password_feedback_mask('*')
-            .build();
-        let password =
-            rpassword::prompt_password_with_config("DB Password: ", cfg).map_err(Error::GetPass)?;
-        let password = Zeroizing::new(password);
-        let mut fp = std::fs::File::open(dbfile).map_err(Error::OpenFile)?;
-        let key = DatabaseKey::new().with_password(password.as_str());
-        Database::open(&mut fp, key).map_err(Error::OpenDB)?
-    };
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct KeeFuzz {
+    dbfile: PathBuf,
+    print: bool,
+}
 
-    let mut entries: Vec<(EntryId, Item)> = Vec::new();
-    let root = db.root();
-    traverse_entries(&mut entries, root, Vec::new());
-    if entries.is_empty() {
-        return Err(Error::EmptyDB);
-    }
-    entries.sort_unstable_by(|(_, a), (_, b)| a.cmp(b));
-
-    let mut ids = Vec::with_capacity(entries.len());
-    let this_bin = std::env::current_exe().map_err(Error::CurrentExe)?;
-    let this_bin = this_bin.to_str().ok_or(Error::NonUtf8Exe)?;
-    let preview_cmd = shell_words::join([this_bin, "--show-preview", "{}"]);
-    let mut p = Command::new("fzf")
-        .arg("--height=~40%")
-        .arg("--read0")
-        .arg("--delimiter=\\t")
-        .arg("--with-nth={1}")
-        .arg("--accept-nth={n}")
-        .arg("--filepath-word")
-        .arg("--preview")
-        .arg(preview_cmd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .map_err(Error::Spawn)?;
-    let mut stdin = p.stdin.take().expect("p.stdin should start out non-None");
-    for (id, item) in entries {
-        ids.push(id);
-        writeln!(&mut stdin, "{}", item.into_fzf_line()).map_err(Error::Write)?;
-    }
-    drop(stdin);
-    let r = p.wait_with_output().map_err(Error::Wait)?;
-    if r.status.code() == Some(0) {
-        let stdout = String::from_utf8(r.stdout).map_err(Error::StdoutNotUtf8)?;
-        let selection = match stdout.trim().parse::<usize>() {
-            Ok(i) => i,
-            Err(source) => {
-                return Err(Error::ParseStdout {
-                    string: stdout,
-                    source,
-                });
-            }
+impl KeeFuzz {
+    fn run(self) -> Result<(), Error> {
+        let clipboard = if self.print {
+            Some(arboard::Clipboard::new().map_err(Error::NewClipboard)?)
+        } else {
+            None
         };
-        let &entry_id = ids.get(selection).ok_or(Error::InvalidIndex(selection))?;
-        let entry = db.entry(entry_id).ok_or(Error::EntryDisappeared)?;
-        let password = entry.get_password().ok_or(Error::NoPassword)?;
-        clipboard.set_text(password).map_err(Error::SetClipboard)?;
-        let _ = writeln!(io::stdout().lock(), "Password copied to clipboard");
-        Ok(())
-    } else if matches!(r.status.code(), Some(1 | 130)) {
-        // No match/cancelled
-        Ok(())
-    } else if r.status.code().is_some() {
-        Err(Error::Exit(r.status))
-    } else {
-        Err(Error::Signal(r.status))
+        let db = {
+            let cfg = rpassword::ConfigBuilder::new()
+                .password_feedback_mask('*')
+                .build();
+            let password = rpassword::prompt_password_with_config("DB Password: ", cfg)
+                .map_err(Error::GetPass)?;
+            let password = Zeroizing::new(password);
+            let mut fp = std::fs::File::open(self.dbfile).map_err(Error::OpenFile)?;
+            let key = DatabaseKey::new().with_password(password.as_str());
+            Database::open(&mut fp, key).map_err(Error::OpenDB)?
+        };
+
+        let mut entries: Vec<(EntryId, Item)> = Vec::new();
+        let root = db.root();
+        traverse_entries(&mut entries, root, Vec::new());
+        if entries.is_empty() {
+            return Err(Error::EmptyDB);
+        }
+        entries.sort_unstable_by(|(_, a), (_, b)| a.cmp(b));
+
+        let mut ids = Vec::with_capacity(entries.len());
+        let this_bin = std::env::current_exe().map_err(Error::CurrentExe)?;
+        let this_bin = this_bin.to_str().ok_or(Error::NonUtf8Exe)?;
+        let preview_cmd = shell_words::join([this_bin, "--show-preview", "{}"]);
+        let mut p = Command::new("fzf")
+            .arg("--height=~40%")
+            .arg("--read0")
+            .arg("--delimiter=\\t")
+            .arg("--with-nth={1}")
+            .arg("--accept-nth={n}")
+            .arg("--filepath-word")
+            .arg("--preview")
+            .arg(preview_cmd)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .map_err(Error::Spawn)?;
+        let mut stdin = p.stdin.take().expect("p.stdin should start out non-None");
+        for (id, item) in entries {
+            ids.push(id);
+            writeln!(&mut stdin, "{}", item.into_fzf_line()).map_err(Error::Write)?;
+        }
+        drop(stdin);
+        let r = p.wait_with_output().map_err(Error::Wait)?;
+        if r.status.code() == Some(0) {
+            let stdout = String::from_utf8(r.stdout).map_err(Error::StdoutNotUtf8)?;
+            let selection = match stdout.trim().parse::<usize>() {
+                Ok(i) => i,
+                Err(source) => {
+                    return Err(Error::ParseStdout {
+                        string: stdout,
+                        source,
+                    });
+                }
+            };
+            let &entry_id = ids.get(selection).ok_or(Error::InvalidIndex(selection))?;
+            let entry = db.entry(entry_id).ok_or(Error::EntryDisappeared)?;
+            let password = entry.get_password().ok_or(Error::NoPassword)?;
+            if let Some(mut cb) = clipboard {
+                cb.set_text(password).map_err(Error::SetClipboard)?;
+                let _ = writeln!(io::stdout().lock(), "Password copied to clipboard");
+            } else {
+                // --print mode
+                let _ = writeln!(io::stdout().lock(), "{password}");
+            }
+            Ok(())
+        } else if matches!(r.status.code(), Some(1 | 130)) {
+            // No match/cancelled
+            Ok(())
+        } else if r.status.code().is_some() {
+            Err(Error::Exit(r.status))
+        } else {
+            Err(Error::Signal(r.status))
+        }
     }
 }
 
