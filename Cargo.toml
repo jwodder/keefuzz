@@ -20,6 +20,7 @@ lexopt = "0.3.2"
 rpassword = "7.5.2"
 shell-words = "1.1.1"
 thiserror = "2.0.18"
+zeroize = "1.8.2"
 
 [dev-dependencies]
 

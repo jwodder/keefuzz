@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::process::{ExitCode, ExitStatus};
 use thiserror::Error;
+use zeroize::Zeroizing;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Arguments {
@@ -143,14 +144,17 @@ fn sanitize(s: &str) -> impl Iterator<Item = char> + '_ {
 
 fn run(dbfile: PathBuf) -> Result<(), Error> {
     let mut clipboard = arboard::Clipboard::new().map_err(Error::NewClipboard)?;
-    let cfg = rpassword::ConfigBuilder::new()
-        .password_feedback_mask('*')
-        .build();
-    let password =
-        rpassword::prompt_password_with_config("DB Password: ", cfg).map_err(Error::GetPass)?;
-    let mut fp = std::fs::File::open(dbfile).map_err(Error::OpenFile)?;
-    let key = DatabaseKey::new().with_password(&password);
-    let db = Database::open(&mut fp, key).map_err(Error::OpenDB)?;
+    let db = {
+        let cfg = rpassword::ConfigBuilder::new()
+            .password_feedback_mask('*')
+            .build();
+        let password =
+            rpassword::prompt_password_with_config("DB Password: ", cfg).map_err(Error::GetPass)?;
+        let password = Zeroizing::new(password);
+        let mut fp = std::fs::File::open(dbfile).map_err(Error::OpenFile)?;
+        let key = DatabaseKey::new().with_password(password.as_str());
+        Database::open(&mut fp, key).map_err(Error::OpenDB)?
+    };
 
     let mut entries: Vec<(EntryId, Item)> = Vec::new();
     let root = db.root();

@@ -514,6 +514,7 @@ dependencies = [
  "rpassword",
  "shell-words",
  "thiserror",
+ "zeroize",
 ]
 
 [[package]]
