@@ -112,12 +112,13 @@ impl Item {
             s.extend(sanitize(&p));
         }
         s.push('/');
-        if let Some(name) = self
-            .title
-            .as_ref()
-            .or(self.url.as_ref())
-            .or(self.username.as_ref())
-        {
+        if let Some(name) = self.title.as_ref().filter(|s| !s.is_empty()) {
+            s.extend(sanitize(name));
+        } else if let Some(name) = self.url.as_ref().filter(|s| !s.is_empty()) {
+            s.push('<');
+            s.extend(sanitize(name));
+            s.push('>');
+        } else if let Some(name) = self.username.as_ref().filter(|s| !s.is_empty()) {
             s.extend(sanitize(name));
         } else {
             s.push_str("<no name>");
