@@ -154,6 +154,9 @@ fn run(dbfile: PathBuf) -> Result<(), Error> {
     let mut entries: Vec<(EntryId, Item)> = Vec::new();
     let root = db.root();
     traverse_entries(&mut entries, root, Vec::new());
+    if entries.is_empty() {
+        return Err(Error::EmptyDB);
+    }
     entries.sort_unstable_by(|(_, a), (_, b)| a.cmp(b));
 
     let mut ids = Vec::with_capacity(entries.len());
@@ -268,6 +271,8 @@ enum Error {
     OpenFile(io::Error),
     #[error("failed to load database: {0}")]
     OpenDB(DatabaseOpenError),
+    #[error("no passwords in database")]
+    EmptyDB,
     #[error("failed to determine path to our own executable: {0}")]
     CurrentExe(io::Error),
     #[error("failed to create --preview command: our own executable path is not UTF-8")]
