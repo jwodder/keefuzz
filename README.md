@@ -15,7 +15,12 @@ password to the clipboard.
 Installation
 ============
 
-TODO
+In order to install `keefuzz`, you first need to have [Rust and Cargo
+installed](https://www.rust-lang.org/tools/install).  You can then build the
+latest version of `keefuzz` and install it in `~/.cargo/bin` by running:
+
+    cargo install --git https://github.com/jwodder/keefuzz
+
 
 External Dependencies
 ---------------------
