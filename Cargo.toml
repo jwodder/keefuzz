@@ -2,7 +2,7 @@
 name = "keefuzz"
 version = "0.1.0-dev"
 edition = "2024"
-rust-version = "1.95"
+rust-version = "1.88"
 description = "Look up passwords in a KeePass database with fzf"
 authors = ["John Thorvald Wodder II <keefuzz@varonathe.org>"]
 repository = "https://github.com/jwodder/keefuzz"
