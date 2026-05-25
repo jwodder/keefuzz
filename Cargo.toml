@@ -8,9 +8,8 @@ authors = ["John Thorvald Wodder II <keefuzz@varonathe.org>"]
 repository = "https://github.com/jwodder/keefuzz"
 documentation = "https://github.com/jwodder/keefuzz"
 license = "MIT"
-keywords = []
-# See <https://crates.io/category_slugs> for a list of categories
-categories = []
+keywords = ["keepass", "password-manager"]
+categories = ["command-line-utilities", "security"]
 exclude = ["/.*"]
 
 [dependencies]
