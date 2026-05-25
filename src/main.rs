@@ -132,7 +132,7 @@ impl KeeFuzz {
         let mut stdin = p.stdin.take().expect("p.stdin should start out non-None");
         for (id, item) in entries {
             ids.push(id);
-            writeln!(&mut stdin, "{}", item.into_fzf_line()).map_err(Error::Write)?;
+            write!(&mut stdin, "{}", item.into_fzf_line()).map_err(Error::Write)?;
         }
         drop(stdin);
         let r = p.wait_with_output().map_err(Error::Wait)?;
