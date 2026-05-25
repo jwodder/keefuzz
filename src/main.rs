@@ -81,71 +81,6 @@ impl Arguments {
     }
 }
 
-fn main() -> ExitCode {
-    match Arguments::from_parser(Parser::from_env())
-        .map_err(Error::Usage)
-        .and_then(Arguments::run)
-    {
-        Ok(code) => code,
-        Err(e) if e.is_epipe_write() => ExitCode::SUCCESS,
-        Err(e) => {
-            let _ = writeln!(io::stderr().lock(), "keefuzz: {e}");
-            ExitCode::FAILURE
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct Item {
-    group_path: Vec<String>,
-    title: Option<String>,
-    url: Option<String>,
-    username: Option<String>,
-    notes: Option<String>,
-}
-
-impl Item {
-    // Output fields (tab-delimited):
-    //  - group_path + (first defined of title, url, username, ???)
-    //  - url
-    //  - username
-    //  - notes
-    fn into_fzf_line(self) -> String {
-        let mut s = String::new();
-        for p in self.group_path {
-            s.push('/');
-            s.extend(sanitize(&p));
-        }
-        s.push('/');
-        if let Some(name) = self.title.as_ref().filter(|s| !s.is_empty()) {
-            s.extend(sanitize(name));
-        } else if let Some(name) = self.url.as_ref().filter(|s| !s.is_empty()) {
-            s.push('<');
-            s.extend(sanitize(name));
-            s.push('>');
-        } else if let Some(name) = self.username.as_ref().filter(|s| !s.is_empty()) {
-            s.extend(sanitize(name));
-        } else {
-            s.push_str("<no name>");
-        }
-        s.push('\t');
-        s.extend(sanitize(self.url.as_deref().unwrap_or_default()));
-        s.push('\t');
-        s.extend(sanitize(self.username.as_deref().unwrap_or_default()));
-        s.push('\t');
-        s.extend(sanitize(self.notes.as_deref().unwrap_or_default()));
-        s.push('\0');
-        s
-    }
-}
-
-fn sanitize(s: &str) -> impl Iterator<Item = char> + '_ {
-    // TODO: Properly expand tab characters
-    s.chars()
-        .filter(|&ch| ch != '\0')
-        .map(|ch| if ch == '\t' { ' ' } else { ch })
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct KeeFuzz {
     dbfile: PathBuf,
@@ -170,7 +105,6 @@ impl KeeFuzz {
             let key = DatabaseKey::new().with_password(password.as_str());
             Database::open(&mut fp, key).map_err(Error::OpenDB)?
         };
-
         let mut entries: Vec<(EntryId, Item)> = Vec::new();
         let root = db.root();
         traverse_entries(&mut entries, root, Vec::new());
@@ -178,7 +112,6 @@ impl KeeFuzz {
             return Err(Error::EmptyDB);
         }
         entries.sort_unstable_by(|(_, a), (_, b)| a.cmp(b));
-
         let mut ids = Vec::with_capacity(entries.len());
         let this_bin = std::env::current_exe().map_err(Error::CurrentExe)?;
         let this_bin = this_bin.to_str().ok_or(Error::NonUtf8Exe)?;
@@ -236,53 +169,48 @@ impl KeeFuzz {
     }
 }
 
-fn traverse_entries(entries: &mut Vec<(EntryId, Item)>, group: GroupRef<'_>, path: Vec<String>) {
-    for e in group.entries() {
-        if e.get_password().is_some() {
-            let item = Item {
-                group_path: path.clone(),
-                title: e.get_title().map(ToOwned::to_owned),
-                url: e.get_url().map(ToOwned::to_owned),
-                username: e.get_username().map(ToOwned::to_owned),
-                notes: e.get(NOTES).map(ToOwned::to_owned),
-            };
-            entries.push((e.id(), item));
-        }
-    }
-    for g in group.groups() {
-        let mut subpath = path.clone();
-        subpath.push(g.name.clone());
-        traverse_entries(entries, g, subpath);
-    }
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Item {
+    group_path: Vec<String>,
+    title: Option<String>,
+    url: Option<String>,
+    username: Option<String>,
+    notes: Option<String>,
 }
 
-fn show_preview(item: String) -> io::Result<()> {
-    let mut bits = item.split('\t');
-    let _path = bits.next();
-    let url = bits.next().unwrap_or_default();
-    let username = bits.next().unwrap_or_default();
-    let notes = bits.next().unwrap_or_default();
-    let mut stdout = io::stdout().lock();
-    let mut anything = false;
-    if !url.is_empty() {
-        writeln!(&mut stdout, "URL: {url}")?;
-        anything = true;
-    }
-    if !username.is_empty() {
-        writeln!(&mut stdout, "Username: {url}")?;
-        anything = true;
-    }
-    if !notes.is_empty() {
-        writeln!(&mut stdout, "Notes:")?;
-        for ln in notes.lines() {
-            writeln!(&mut stdout, "    {ln}")?;
+impl Item {
+    // Output fields (tab-delimited):
+    //  - group_path + (first defined of title, url, username, ???)
+    //  - url
+    //  - username
+    //  - notes
+    fn into_fzf_line(self) -> String {
+        let mut s = String::new();
+        for p in self.group_path {
+            s.push('/');
+            s.extend(sanitize(&p));
         }
-        anything = true;
+        s.push('/');
+        if let Some(name) = self.title.as_ref().filter(|s| !s.is_empty()) {
+            s.extend(sanitize(name));
+        } else if let Some(name) = self.url.as_ref().filter(|s| !s.is_empty()) {
+            s.push('<');
+            s.extend(sanitize(name));
+            s.push('>');
+        } else if let Some(name) = self.username.as_ref().filter(|s| !s.is_empty()) {
+            s.extend(sanitize(name));
+        } else {
+            s.push_str("<no name>");
+        }
+        s.push('\t');
+        s.extend(sanitize(self.url.as_deref().unwrap_or_default()));
+        s.push('\t');
+        s.extend(sanitize(self.username.as_deref().unwrap_or_default()));
+        s.push('\t');
+        s.extend(sanitize(self.notes.as_deref().unwrap_or_default()));
+        s.push('\0');
+        s
     }
-    if !anything {
-        writeln!(&mut stdout, "-- No Data --")?;
-    }
-    Ok(())
 }
 
 #[derive(Debug, Error)]
@@ -334,4 +262,74 @@ impl Error {
     fn is_epipe_write(&self) -> bool {
         matches!(self, Error::GetPass(e) | Error::Write(e) if e.kind() == ErrorKind::BrokenPipe)
     }
+}
+
+fn main() -> ExitCode {
+    match Arguments::from_parser(Parser::from_env())
+        .map_err(Error::Usage)
+        .and_then(Arguments::run)
+    {
+        Ok(code) => code,
+        Err(e) if e.is_epipe_write() => ExitCode::SUCCESS,
+        Err(e) => {
+            let _ = writeln!(io::stderr().lock(), "keefuzz: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn sanitize(s: &str) -> impl Iterator<Item = char> + '_ {
+    // TODO: Properly expand tab characters
+    s.chars()
+        .filter(|&ch| ch != '\0')
+        .map(|ch| if ch == '\t' { ' ' } else { ch })
+}
+
+fn traverse_entries(entries: &mut Vec<(EntryId, Item)>, group: GroupRef<'_>, path: Vec<String>) {
+    for e in group.entries() {
+        if e.get_password().is_some() {
+            let item = Item {
+                group_path: path.clone(),
+                title: e.get_title().map(ToOwned::to_owned),
+                url: e.get_url().map(ToOwned::to_owned),
+                username: e.get_username().map(ToOwned::to_owned),
+                notes: e.get(NOTES).map(ToOwned::to_owned),
+            };
+            entries.push((e.id(), item));
+        }
+    }
+    for g in group.groups() {
+        let mut subpath = path.clone();
+        subpath.push(g.name.clone());
+        traverse_entries(entries, g, subpath);
+    }
+}
+
+fn show_preview(item: String) -> io::Result<()> {
+    let mut bits = item.split('\t');
+    let _path = bits.next();
+    let url = bits.next().unwrap_or_default();
+    let username = bits.next().unwrap_or_default();
+    let notes = bits.next().unwrap_or_default();
+    let mut stdout = io::stdout().lock();
+    let mut anything = false;
+    if !url.is_empty() {
+        writeln!(&mut stdout, "URL: {url}")?;
+        anything = true;
+    }
+    if !username.is_empty() {
+        writeln!(&mut stdout, "Username: {url}")?;
+        anything = true;
+    }
+    if !notes.is_empty() {
+        writeln!(&mut stdout, "Notes:")?;
+        for ln in notes.lines() {
+            writeln!(&mut stdout, "    {ln}")?;
+        }
+        anything = true;
+    }
+    if !anything {
+        writeln!(&mut stdout, "-- No Data --")?;
+    }
+    Ok(())
 }
