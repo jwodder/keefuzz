@@ -59,3 +59,25 @@ Options
 - `-h`, `--help` — Show command-line usage
 
 - `-V`, `--version` — Show current program version
+
+
+NO WARRANTY OR GUARANTEE OF SECURITY
+====================================
+
+Although `keefuzz`'s license already states this, given that the project deals
+with sensitive data, it bears repeating:
+
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+> IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+> LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+> OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+> SOFTWARE.
+
+In particular, the developers of `keefuzz` make no guarantees about it being a
+secure way to access a KeePass database.  As an example of the level of
+security this project exhibits, while `keefuzz` and `fzf` are running, the
+passwords in the database can be read directly from `keefuzz`'s memory.
+Whether you consider this acceptable security-wise depends on your threat
+model.
