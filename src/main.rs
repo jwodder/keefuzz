@@ -89,7 +89,7 @@ struct KeeFuzz {
 
 impl KeeFuzz {
     fn run(self) -> Result<(), Error> {
-        let clipboard = if self.print {
+        let clipboard = if !self.print {
             Some(arboard::Clipboard::new().map_err(Error::NewClipboard)?)
         } else {
             None
@@ -318,7 +318,7 @@ fn show_preview(item: String) -> io::Result<()> {
         anything = true;
     }
     if !username.is_empty() {
-        writeln!(&mut stdout, "Username: {url}")?;
+        writeln!(&mut stdout, "Username: {username}")?;
         anything = true;
     }
     if !notes.is_empty() {
