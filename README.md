@@ -32,10 +32,12 @@ Usage
     keefuzz [<options>] <database>
 
 `keefuzz` takes one mandatory argument: the path to a KeePass database file.
-On startup, the user is prompted for the password for the database itself.
-Entries are then read from the database, and their information is passed to
-[`fzf`][], which handles the selection user interface.  Entries that don't
-actually contain passwords are omitted from the selection list.
+On startup, the user is prompted for the password for the database itself,
+unless a file containing the database password was supplied to the
+`-F`/`--password-file` option.  Entries are then read from the database, and
+their information is passed to [`fzf`][], which handles the selection user
+interface.  Entries that don't actually contain passwords are omitted from the
+selection list.
 
 Each line in the `fzf` selection list consists of the slash-separated group
 path to an entry, ending with the entry's title.  If an entry lacks a title,
@@ -51,6 +53,11 @@ without selecting anything (by pressing <kbd>Ctrl</kbd>-<kbd>C</kbd> or
 
 Options
 -------
+
+- `-F FILE`, `--password-file FILE` — Use the contents of `FILE` as the
+  database password instead of prompting for the password interactively.  If
+  the file's contents end in a LF or CR LF sequence, it will be removed before
+  use.
 
 - `-p`, `--print` — Print the password for the chosen entry to stdout instead
   of copying it to the clipboard
