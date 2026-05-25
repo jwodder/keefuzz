@@ -23,9 +23,13 @@ impl Arguments {
     fn from_parser(mut parser: Parser) -> Result<Arguments, lexopt::Error> {
         let mut dbarg = None;
         let mut print = false;
+        let mut password_file = None;
         while let Some(arg) = parser.next()? {
             match arg {
-                Arg::Short('p') | Arg::Long("--print") => print = true,
+                Arg::Short('p') | Arg::Long("print") => print = true,
+                Arg::Short('F') | Arg::Long("password-file") => {
+                    password_file = Some(PathBuf::from(parser.value()?));
+                }
                 Arg::Long("show-preview") => {
                     return Ok(Arguments::ShowPreview(parser.value()?.string()?));
                 }
@@ -38,7 +42,11 @@ impl Arguments {
             }
         }
         if let Some(dbfile) = dbarg {
-            Ok(Arguments::Run(KeeFuzz { dbfile, print }))
+            Ok(Arguments::Run(KeeFuzz {
+                dbfile,
+                print,
+                password_file,
+            }))
         } else {
             Err("no database specified".into())
         }
@@ -59,6 +67,9 @@ impl Arguments {
                         "Visit <https://github.com/jwodder/keefuzz> for more information.\n",
                         "\n",
                         "Options:\n",
+                        "  -F FILE, --password-file FILE\n",
+                        "                    Read the database password from FILE\n",
+                        "\n",
                         "  -p, --print       Print out password instead of copying it to the clipboard\n",
                         "\n",
                         "  -h, --help        Display this help message and exit\n",
@@ -85,6 +96,7 @@ impl Arguments {
 struct KeeFuzz {
     dbfile: PathBuf,
     print: bool,
+    password_file: Option<PathBuf>,
 }
 
 impl KeeFuzz {
@@ -95,11 +107,22 @@ impl KeeFuzz {
             None
         };
         let db = {
-            let cfg = rpassword::ConfigBuilder::new()
-                .password_feedback_mask('*')
-                .build();
-            let password = rpassword::prompt_password_with_config("DB Password: ", cfg)
-                .map_err(Error::GetPass)?;
+            let password = if let Some(path) = self.password_file {
+                let mut s = std::fs::read_to_string(path).map_err(Error::ReadPasswordFile)?;
+                if s.ends_with('\n') {
+                    s.pop();
+                    if s.ends_with('\r') {
+                        s.pop();
+                    }
+                }
+                s
+            } else {
+                let cfg = rpassword::ConfigBuilder::new()
+                    .password_feedback_mask('*')
+                    .build();
+                rpassword::prompt_password_with_config("DB Password: ", cfg)
+                    .map_err(Error::GetPass)?
+            };
             let password = Zeroizing::new(password);
             let mut fp = std::fs::File::open(self.dbfile).map_err(Error::OpenFile)?;
             let key = DatabaseKey::new().with_password(password.as_str());
@@ -220,6 +243,8 @@ enum Error {
     Usage(lexopt::Error),
     #[error("failed to obtain handle to system clipboard")]
     NewClipboard(arboard::Error),
+    #[error("failed to read password from file: {0}")]
+    ReadPasswordFile(io::Error),
     #[error(transparent)]
     GetPass(io::Error),
     #[error("failed to access database file: {0}")]
