@@ -118,6 +118,7 @@ impl KeeFuzz {
         let preview_cmd = shell_words::join([this_bin, "--show-preview", "{}"]);
         let mut p = Command::new("fzf")
             .arg("--height=~40%")
+            .arg("--reverse")
             .arg("--read0")
             .arg("--delimiter=\\t")
             .arg("--with-nth={1}")
