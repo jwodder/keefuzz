@@ -23,13 +23,17 @@ impl Arguments {
     fn from_parser(mut parser: Parser) -> Result<Arguments, lexopt::Error> {
         let mut dbarg = None;
         let mut print = false;
-        let mut password_file = None;
+        let mut key_provider = KeyProvider::default();
         while let Some(arg) = parser.next()? {
             match arg {
-                Arg::Short('p') | Arg::Long("print") => print = true,
                 Arg::Short('F') | Arg::Long("password-file") => {
-                    password_file = Some(PathBuf::from(parser.value()?));
+                    key_provider = KeyProvider::PasswordFile(PathBuf::from(parser.value()?));
                 }
+                Arg::Short('k') | Arg::Long("keyfile") => {
+                    key_provider = KeyProvider::Keyfile(PathBuf::from(parser.value()?));
+                }
+                Arg::Long("no-key") => key_provider = KeyProvider::None,
+                Arg::Short('p') | Arg::Long("print") => print = true,
                 Arg::Long("show-preview") => {
                     return Ok(Arguments::ShowPreview(parser.value()?.string()?));
                 }
@@ -45,7 +49,7 @@ impl Arguments {
             Ok(Arguments::Run(KeeFuzz {
                 dbfile,
                 print,
-                password_file,
+                key_provider,
             }))
         } else {
             Err("no database specified".into())
@@ -69,6 +73,12 @@ impl Arguments {
                         "Options:\n",
                         "  -F FILE, --password-file FILE\n",
                         "                    Read the database password from FILE\n",
+                        "\n",
+                        "  -k FILE, --keyfile FILE\n",
+                        "                    Unlock the database using the given keyfile\n",
+                        "\n",
+                        "  --no-key          Assume the database is not protected with a password or\n",
+                        "                    keyfile\n",
                         "\n",
                         "  -p, --print       Print out password instead of copying it to the clipboard\n",
                         "\n",
@@ -96,7 +106,7 @@ impl Arguments {
 struct KeeFuzz {
     dbfile: PathBuf,
     print: bool,
-    password_file: Option<PathBuf>,
+    key_provider: KeyProvider,
 }
 
 impl KeeFuzz {
@@ -107,25 +117,8 @@ impl KeeFuzz {
             None
         };
         let db = {
-            let password = if let Some(path) = self.password_file {
-                let mut s = std::fs::read_to_string(path).map_err(Error::ReadPasswordFile)?;
-                if s.ends_with('\n') {
-                    s.pop();
-                    if s.ends_with('\r') {
-                        s.pop();
-                    }
-                }
-                s
-            } else {
-                let cfg = rpassword::ConfigBuilder::new()
-                    .password_feedback_mask('*')
-                    .build();
-                rpassword::prompt_password_with_config("DB Password: ", cfg)
-                    .map_err(Error::GetPass)?
-            };
-            let password = Zeroizing::new(password);
             let mut fp = std::fs::File::open(self.dbfile).map_err(Error::OpenFile)?;
-            let key = DatabaseKey::new().with_password(password.as_str());
+            let key = self.key_provider.into_key()?;
             Database::open(&mut fp, key).map_err(Error::OpenDB)?
         };
         let mut entries: Vec<(EntryId, Item)> = Vec::new();
@@ -193,6 +186,49 @@ impl KeeFuzz {
     }
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+enum KeyProvider {
+    #[default]
+    Prompt,
+    PasswordFile(PathBuf),
+    Keyfile(PathBuf),
+    None,
+}
+
+impl KeyProvider {
+    fn into_key(self) -> Result<DatabaseKey, Error> {
+        match self {
+            KeyProvider::Prompt => {
+                let cfg = rpassword::ConfigBuilder::new()
+                    .password_feedback_mask('*')
+                    .build();
+                let password = rpassword::prompt_password_with_config("DB Password: ", cfg)
+                    .map_err(Error::GetPass)?;
+                let password = Zeroizing::new(password);
+                Ok(DatabaseKey::new().with_password(password.as_str()))
+            }
+            KeyProvider::PasswordFile(path) => {
+                let mut s = std::fs::read_to_string(path).map_err(Error::ReadPasswordFile)?;
+                if s.ends_with('\n') {
+                    s.pop();
+                    if s.ends_with('\r') {
+                        s.pop();
+                    }
+                }
+                let password = Zeroizing::new(s);
+                Ok(DatabaseKey::new().with_password(password.as_str()))
+            }
+            KeyProvider::Keyfile(path) => {
+                let mut fp = std::fs::File::open(path).map_err(Error::OpenKeyfile)?;
+                DatabaseKey::new()
+                    .with_keyfile(&mut fp)
+                    .map_err(Error::ReadKeyfile)
+            }
+            KeyProvider::None => Ok(DatabaseKey::new()),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct Item {
     group_path: Vec<String>,
@@ -247,6 +283,10 @@ enum Error {
     ReadPasswordFile(io::Error),
     #[error(transparent)]
     GetPass(io::Error),
+    #[error("failed to access keyfile: {0}")]
+    OpenKeyfile(io::Error),
+    #[error("failed to read keyfile: {0}")]
+    ReadKeyfile(io::Error),
     #[error("failed to access database file: {0}")]
     OpenFile(io::Error),
     #[error("failed to load database: {0}")]
