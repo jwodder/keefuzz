@@ -53,6 +53,12 @@ without selecting anything (by pressing <kbd>Ctrl</kbd>-<kbd>C</kbd> or
 Options
 -------
 
+- `--fzf-options ARGS` — Add `ARGS` to the options passed to `fzf`.  `ARGS`
+  must consist of one or more `fzf` options and their arguments, separated by
+  spaces (and thus you will usually have to quote the entirety of `ARGS` to
+  keep your shell from splitting it).  Basic shell quoting within `ARGS` is
+  supported.
+
 - `-F FILE`, `--password-file FILE` — Use the contents of `FILE` as the
   database password instead of prompting for the password interactively.  If
   the file's contents end in a LF or CR LF sequence, it will be removed before
