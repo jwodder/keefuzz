@@ -24,8 +24,15 @@ impl Arguments {
         let mut dbarg = None;
         let mut print = false;
         let mut key_provider = KeyProvider::default();
+        let mut fzf_options = Vec::new();
         while let Some(arg) = parser.next()? {
             match arg {
+                Arg::Long("fzf-options") => match shell_words::split(&parser.value()?.string()?) {
+                    Ok(args) => fzf_options = args,
+                    Err(e) => {
+                        return Err(format!("failed to split --fzf-options argument: {e}").into());
+                    }
+                },
                 Arg::Short('F') | Arg::Long("password-file") => {
                     key_provider = KeyProvider::PasswordFile(PathBuf::from(parser.value()?));
                 }
@@ -50,6 +57,7 @@ impl Arguments {
                 dbfile,
                 print,
                 key_provider,
+                fzf_options,
             }))
         } else {
             Err("no database specified".into())
@@ -71,6 +79,9 @@ impl Arguments {
                         "Visit <https://github.com/jwodder/keefuzz> for more information.\n",
                         "\n",
                         "Options:\n",
+                        "  --fzf-options ARGS\n",
+                        "                    Add ARGS to the options passed to fzf\n",
+                        "\n",
                         "  -F FILE, --password-file FILE\n",
                         "                    Read the database password from FILE\n",
                         "\n",
@@ -107,6 +118,7 @@ struct KeeFuzz {
     dbfile: PathBuf,
     print: bool,
     key_provider: KeyProvider,
+    fzf_options: Vec<String>,
 }
 
 impl KeeFuzz {
@@ -142,6 +154,7 @@ impl KeeFuzz {
             .arg("--filepath-word")
             .arg("--preview")
             .arg(preview_cmd)
+            .args(self.fzf_options)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
