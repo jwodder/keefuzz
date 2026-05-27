@@ -6,9 +6,10 @@
 [GitHub](https://github.com/jwodder/keefuzz) | [Issues](https://github.com/jwodder/keefuzz/issues)
 
 `keefuzz` is a simple command-line program for interactively selecting an entry
-from a KeePass password database with [`fzf`][] and then copying the entry's
-password to the clipboard.
+from a [KeePass][] password database with [`fzf`][] and then copying the
+entry's password to the clipboard.
 
+[KeePass]: https://keepass.info
 [`fzf`]: https://github.com/junegunn/fzf
 
 Installation
