@@ -412,3 +412,62 @@ fn show_preview(item: String) -> io::Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod parse_args {
+        use super::*;
+
+        #[test]
+        fn opts_after_database() {
+            let parser = Parser::from_iter(["keefuzz", "passwords.kdbx", "--print"]);
+            let args = Arguments::from_parser(parser).unwrap();
+            assert_eq!(
+                args,
+                Arguments::Run(KeeFuzz {
+                    dbfile: "passwords.kdbx".into(),
+                    print: true,
+                    key_provider: KeyProvider::default(),
+                    fzf_options: Vec::new(),
+                })
+            );
+        }
+
+        #[test]
+        fn keefuzz_option_to_fzf() {
+            let parser = Parser::from_iter(["keefuzz", "--fzf-options", "-p", "passwords.kdbx"]);
+            let args = Arguments::from_parser(parser).unwrap();
+            assert_eq!(
+                args,
+                Arguments::Run(KeeFuzz {
+                    dbfile: "passwords.kdbx".into(),
+                    print: false,
+                    key_provider: KeyProvider::default(),
+                    fzf_options: vec!["-p".into()],
+                })
+            );
+        }
+
+        #[test]
+        fn quoted_fzf_option() {
+            let parser = Parser::from_iter([
+                "keefuzz",
+                "--fzf-options",
+                "--preview-label 'Entry Details'",
+                "passwords.kdbx",
+            ]);
+            let args = Arguments::from_parser(parser).unwrap();
+            assert_eq!(
+                args,
+                Arguments::Run(KeeFuzz {
+                    dbfile: "passwords.kdbx".into(),
+                    print: false,
+                    key_provider: KeyProvider::default(),
+                    fzf_options: vec!["--preview-label".into(), "Entry Details".into()],
+                })
+            );
+        }
+    }
+}
