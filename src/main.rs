@@ -391,24 +391,33 @@ fn show_preview(item: String) -> io::Result<()> {
     let username = bits.next().unwrap_or_default();
     let notes = bits.next().unwrap_or_default();
     let mut stdout = io::stdout().lock();
+    write_preview(&mut stdout, url, username, notes)
+}
+
+fn write_preview<W: Write>(
+    mut writer: W,
+    url: &str,
+    username: &str,
+    notes: &str,
+) -> io::Result<()> {
     let mut anything = false;
     if !url.is_empty() {
-        writeln!(&mut stdout, "URL: {url}")?;
+        writeln!(&mut writer, "URL: {url}")?;
         anything = true;
     }
     if !username.is_empty() {
-        writeln!(&mut stdout, "Username: {username}")?;
+        writeln!(&mut writer, "Username: {username}")?;
         anything = true;
     }
     if !notes.is_empty() {
-        writeln!(&mut stdout, "Notes:")?;
+        writeln!(&mut writer, "Notes:")?;
         for ln in notes.lines() {
-            writeln!(&mut stdout, "    {ln}")?;
+            writeln!(&mut writer, "    {ln}")?;
         }
         anything = true;
     }
     if !anything {
-        writeln!(&mut stdout, "-- No Data --")?;
+        writeln!(&mut writer, "-- No Data --")?;
     }
     Ok(())
 }
@@ -468,6 +477,105 @@ mod tests {
                     fzf_options: vec!["--preview-label".into(), "Entry Details".into()],
                 })
             );
+        }
+    }
+
+    mod fzf_lines {
+        use super::*;
+
+        #[test]
+        fn uses_title_as_display_name() {
+            let item = Item {
+                group_path: vec!["Internet".into(), "Work".into()],
+                title: Some("Example".into()),
+                url: Some("https://example.com".into()),
+                username: Some("alice".into()),
+                notes: Some("login notes".into()),
+            };
+
+            assert_eq!(
+                item.into_fzf_line(),
+                "/Internet/Work/Example\thttps://example.com\talice\tlogin notes\0"
+            );
+        }
+
+        #[test]
+        fn falls_back_to_url_username_then_no_name() {
+            let url_item = Item {
+                group_path: Vec::new(),
+                title: None,
+                url: Some("https://example.com".into()),
+                username: Some("alice".into()),
+                notes: None,
+            };
+            let username_item = Item {
+                group_path: Vec::new(),
+                title: None,
+                url: None,
+                username: Some("alice".into()),
+                notes: None,
+            };
+            let unnamed_item = Item {
+                group_path: Vec::new(),
+                title: None,
+                url: None,
+                username: None,
+                notes: None,
+            };
+
+            assert_eq!(
+                url_item.into_fzf_line(),
+                "/<https://example.com>\thttps://example.com\talice\t\0"
+            );
+            assert_eq!(username_item.into_fzf_line(), "/alice\t\talice\t\0");
+            assert_eq!(unnamed_item.into_fzf_line(), "/<no name>\t\t\t\0");
+        }
+
+        #[test]
+        fn sanitizes_tabs_and_nuls() {
+            let item = Item {
+                group_path: vec!["Group\tOne".into()],
+                title: Some("Ti\0tle".into()),
+                url: Some("https://exa\tmple.com".into()),
+                username: Some("ali\0ce".into()),
+                notes: Some("line\t1\0".into()),
+            };
+
+            assert_eq!(
+                item.into_fzf_line(),
+                "/Group One/Title\thttps://exa mple.com\talice\tline 1\0"
+            );
+        }
+    }
+
+    mod preview {
+        use super::*;
+
+        #[test]
+        fn writes_available_fields() {
+            let mut output = Vec::new();
+
+            write_preview(
+                &mut output,
+                "https://example.com",
+                "alice",
+                "line 1\nline 2",
+            )
+            .unwrap();
+
+            assert_eq!(
+                String::from_utf8(output).unwrap(),
+                "URL: https://example.com\nUsername: alice\nNotes:\n    line 1\n    line 2\n"
+            );
+        }
+
+        #[test]
+        fn writes_no_data_message() {
+            let mut output = Vec::new();
+
+            write_preview(&mut output, "", "", "").unwrap();
+
+            assert_eq!(String::from_utf8(output).unwrap(), "-- No Data --\n");
         }
     }
 }
