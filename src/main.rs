@@ -249,6 +249,7 @@ struct Item {
     url: Option<String>,
     username: Option<String>,
     notes: Option<String>,
+    tags: Vec<String>,
 }
 
 impl Item {
@@ -257,6 +258,7 @@ impl Item {
     //  - url
     //  - username
     //  - notes
+    //  - tags
     fn into_fzf_line(self) -> String {
         let mut s = String::new();
         for p in self.group_path {
@@ -281,6 +283,8 @@ impl Item {
         s.extend(sanitize(self.username.as_deref().unwrap_or_default()));
         s.push('\t');
         s.extend(sanitize(self.notes.as_deref().unwrap_or_default()));
+        s.push('\t');
+        push_sanitized_joined(&mut s, &self.tags, ", ");
         s.push('\0');
         s
     }
@@ -364,6 +368,17 @@ fn sanitize(s: &str) -> impl Iterator<Item = char> + '_ {
         .map(|ch| if ch == '\t' { ' ' } else { ch })
 }
 
+fn push_sanitized_joined(s: &mut String, values: &[String], sep: &str) {
+    let mut first = true;
+    for value in values {
+        if !first {
+            s.push_str(sep);
+        }
+        s.extend(sanitize(value));
+        first = false;
+    }
+}
+
 fn traverse_entries(entries: &mut Vec<(EntryId, Item)>, group: GroupRef<'_>, path: Vec<String>) {
     for e in group.entries() {
         if e.get_password().is_some() {
@@ -373,6 +388,7 @@ fn traverse_entries(entries: &mut Vec<(EntryId, Item)>, group: GroupRef<'_>, pat
                 url: e.get_url().map(ToOwned::to_owned),
                 username: e.get_username().map(ToOwned::to_owned),
                 notes: e.get(NOTES).map(ToOwned::to_owned),
+                tags: e.tags.clone(),
             };
             entries.push((e.id(), item));
         }
@@ -385,30 +401,38 @@ fn traverse_entries(entries: &mut Vec<(EntryId, Item)>, group: GroupRef<'_>, pat
 }
 
 fn show_preview(item: String) -> io::Result<()> {
+    write_preview(&item, &mut io::stdout().lock())
+}
+
+fn write_preview<W: Write>(item: &str, stdout: &mut W) -> io::Result<()> {
     let mut bits = item.split('\t');
     let _path = bits.next();
     let url = bits.next().unwrap_or_default();
     let username = bits.next().unwrap_or_default();
     let notes = bits.next().unwrap_or_default();
-    let mut stdout = io::stdout().lock();
+    let tags = bits.next().unwrap_or_default().trim_end_matches('\0');
     let mut anything = false;
     if !url.is_empty() {
-        writeln!(&mut stdout, "URL: {url}")?;
+        writeln!(stdout, "URL: {url}")?;
         anything = true;
     }
     if !username.is_empty() {
-        writeln!(&mut stdout, "Username: {username}")?;
+        writeln!(stdout, "Username: {username}")?;
+        anything = true;
+    }
+    if !tags.is_empty() {
+        writeln!(stdout, "Tags: {tags}")?;
         anything = true;
     }
     if !notes.is_empty() {
-        writeln!(&mut stdout, "Notes:")?;
+        writeln!(stdout, "Notes:")?;
         for ln in notes.lines() {
-            writeln!(&mut stdout, "    {ln}")?;
+            writeln!(stdout, "    {ln}")?;
         }
         anything = true;
     }
     if !anything {
-        writeln!(&mut stdout, "-- No Data --")?;
+        writeln!(stdout, "-- No Data --")?;
     }
     Ok(())
 }
@@ -416,6 +440,71 @@ fn show_preview(item: String) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod item_format {
+        use super::*;
+
+        #[test]
+        fn fzf_line_includes_tags() {
+            let item = Item {
+                group_path: vec!["Database".into(), "Work".into()],
+                title: Some("VPN".into()),
+                url: Some("https://vpn.example.com".into()),
+                username: Some("alice".into()),
+                notes: Some("requires MFA".into()),
+                tags: vec!["network".into(), "2fa".into()],
+            };
+
+            assert_eq!(
+                item.into_fzf_line(),
+                "/Database/Work/VPN\thttps://vpn.example.com\talice\trequires MFA\tnetwork, 2fa\0"
+            );
+        }
+
+        #[test]
+        fn fzf_line_sanitizes_tags() {
+            let item = Item {
+                group_path: Vec::new(),
+                title: Some("Entry".into()),
+                url: None,
+                username: None,
+                notes: None,
+                tags: vec!["has\ttab".into(), "has\0nul".into()],
+            };
+
+            assert_eq!(item.into_fzf_line(), "/Entry\t\t\t\thas tab, hasnul\0");
+        }
+    }
+
+    mod preview {
+        use super::*;
+
+        #[test]
+        fn preview_includes_tags() {
+            let mut out = Vec::new();
+            write_preview(
+                "/Database/Work/VPN\thttps://vpn.example.com\talice\trequires MFA\tnetwork, 2fa",
+                &mut out,
+            )
+            .expect("preview should render");
+
+            assert_eq!(
+                String::from_utf8(out).expect("preview should be UTF-8"),
+                "URL: https://vpn.example.com\nUsername: alice\nTags: network, 2fa\nNotes:\n    requires MFA\n"
+            );
+        }
+
+        #[test]
+        fn preview_without_tags_still_works() {
+            let mut out = Vec::new();
+            write_preview("/Entry\t\t\t\t", &mut out).expect("preview should render");
+
+            assert_eq!(
+                String::from_utf8(out).expect("preview should be UTF-8"),
+                "-- No Data --\n"
+            );
+        }
+    }
 
     mod parse_args {
         use super::*;
