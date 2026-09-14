@@ -14,7 +14,7 @@ exclude = ["/.*"]
 
 [dependencies]
 arboard = { version = "3.6.1", default-features = false, features = ["windows-sys"] }
-keepass = "0.13.2"
+keepass = "0.14.0"
 lexopt = "0.3.2"
 rpassword = "7.5.2"
 shell-words = "1.1.1"
