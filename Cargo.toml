@@ -2,7 +2,7 @@
 name = "keefuzz"
 version = "0.1.0-dev"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.89"
 description = "Look up passwords in a KeePass database with fzf"
 authors = ["John Thorvald Wodder II <keefuzz@varonathe.org>"]
 repository = "https://github.com/jwodder/keefuzz"
@@ -14,7 +14,7 @@ exclude = ["/.*"]
 
 [dependencies]
 arboard = { version = "3.6.1", default-features = false, features = ["windows-sys"] }
-keepass = "0.14.0"
+keepass = "0.15.0"
 lexopt = "0.3.2"
 rpassword = "7.5.2"
 shell-words = "1.1.1"
